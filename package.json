@@ -1,0 +1,33 @@
+{
+  "name": "whisperly",
+  "version": "1.0.0",
+  "description": "Whisperly - an anonymous messaging (Saraha-style) app with full authentication, built with Node.js, Express & MongoDB.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": [
+    "saraha",
+    "anonymous-messaging",
+    "authentication",
+    "express",
+    "mongodb",
+    "jwt",
+    "otp"
+  ],
+  "author": "Whisperly Team",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "joi": "^17.13.3",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.6.0",
+    "nanoid": "^5.0.7",
+    "nodemailer": "^6.9.14"
+  }
+}
