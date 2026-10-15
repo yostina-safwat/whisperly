@@ -23,3 +23,7 @@ Thumbs.db
 dist/
 build/
 coverage/
+
+# Uploaded files (keep the folder, ignore its contents)
+uploads/*
+!uploads/.gitkeep

@@ -133,6 +133,21 @@
             "header": [],
             "url": { "raw": "{{baseUrl}}/user/{{receiverId}}", "host": ["{{baseUrl}}"], "path": ["user", "{{receiverId}}"] }
           }
+        },
+        {
+          "name": "Upload Profile Image",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/user/profile/image", "host": ["{{baseUrl}}"], "path": ["user", "profile", "image"] },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "image", "type": "file", "src": [] }
+              ]
+            },
+            "description": "Upload or replace the profile picture. Choose an image file for the `image` field. Validated by file filter + magic numbers; returns the stored path and a public URL."
+          }
         }
       ]
     },

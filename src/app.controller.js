@@ -1,5 +1,6 @@
 import cors from "cors";
 import connectDB from "./DB/connection.js";
+import { initCache } from "./utils/cache/cache.js";
 import authRouter from "./modules/auth/auth.controller.js";
 import userRouter from "./modules/user/user.controller.js";
 import messageRouter from "./modules/message/message.controller.js";
@@ -11,12 +12,16 @@ import logger from "./utils/logger/logger.js";
  * Wires middleware, routes and the global error handling layer.
  */
 const bootstrap = (app, express) => {
-  // Connect to the database
+  // Connect to the database and the cache layer
   connectDB();
+  initCache();
 
   // Global middleware
   app.use(cors());
   app.use(express.json());
+
+  // Serve uploaded files statically, e.g. GET /uploads/users/ab12.jpg
+  app.use("/uploads", express.static("uploads"));
 
   // Simple request logger
   app.use((req, _res, next) => {

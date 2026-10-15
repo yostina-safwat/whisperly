@@ -20,6 +20,16 @@ Anyone can send an anonymous "whisper" to a registered user. Users sign up, conf
   - Send an anonymous whisper to any confirmed user
   - Read the whispers you received (protected)
   - Delete your own whispers
+- 🖼️ **File uploads (Multer)**
+  - Upload / replace a profile picture
+  - Two-layer validation: file filter (mime type) **and magic-number** check (real file content)
+  - Files saved to disk and served as static files from Express
+- ⚡ **Caching (Redis)**
+  - `with-cache` middleware for GET endpoints (public profile)
+  - Automatic cache invalidation on update
+  - Degrades gracefully — if Redis isn't configured, caching is simply skipped
+- 🛡️ **Graceful shutdown**
+  - Closes the HTTP server, MongoDB and Redis cleanly on SIGINT/SIGTERM
 - 🧱 **Clean, professional architecture (from the course)**
   - MVC / modular folder structure
   - Custom **`AppError`** class (OOP, extends `Error`)
@@ -41,6 +51,8 @@ Anyone can send an anonymous "whisper" to a registered user. Users sign up, conf
 | Auth        | JWT + bcryptjs               |
 | Validation  | Joi                          |
 | Email       | Nodemailer (Gmail)           |
+| Uploads     | Multer (+ magic-number check)|
+| Cache       | Redis (ioredis)              |
 
 ---
 
@@ -65,12 +77,19 @@ Whisperly/
 │   │   ├── auth/                 # register / confirm / login / otp / reset
 │   │   ├── user/                 # profile / public profile / my messages
 │   │   └── message/             # send / delete anonymous whispers
+│   ├── middleware/
+│   │   ├── authentication.middleware.js
+│   │   ├── validation.middleware.js
+│   │   └── withCache.middleware.js   # Redis response cache
 │   └── utils/
 │       ├── error/               # AppError (OOP) + error handler
 │       ├── logger/              # custom Logger class
 │       ├── email/               # EmailProvider (abstraction) + Nodemailer + service
 │       ├── otp/                 # OTP generation
+│       ├── upload/              # Multer config + magic numbers + saveFile
+│       ├── cache/              # Redis client wrapper
 │       └── security/            # hashing + JWT
+├── uploads/                     # Uploaded files (served statically)
 ```
 
 ---
@@ -80,6 +99,7 @@ Whisperly/
 ### 1. Prerequisites
 - Node.js 18+
 - MongoDB running locally, or a MongoDB Atlas connection string
+- Redis (optional — only needed if you want caching enabled)
 
 ### 2. Install
 ```bash
@@ -102,6 +122,8 @@ cp .env.example .env
 | `OTP_EXPIRES_IN_MINUTES` | OTP validity window |
 | `EMAIL_USER` / `EMAIL_PASSWORD` | Gmail + App Password for Nodemailer |
 | `EMAIL_FROM` | The "from" address shown in emails |
+| `REDIS_URL` | Redis connection string (optional; caching off if omitted) |
+| `CACHE_TTL_SECONDS` | Default cache lifetime in seconds |
 
 > **Gmail tip:** use a [Google App Password](https://myaccount.google.com/apppasswords), not your normal password.
 
@@ -135,7 +157,10 @@ Base URL: `http://localhost:3000`
 | --- | --- | --- | --- |
 | GET | `/user/profile` | ✅ | My profile |
 | GET | `/user/messages` | ✅ | Whispers I received |
-| GET | `/user/:id` | ❌ | Public profile (to send a whisper) |
+| POST | `/user/profile/image` | ✅ | Upload/replace profile picture (form-data, field `image`) |
+| GET | `/user/:id` | ❌ | Public profile (cached) — to send a whisper |
+
+> Uploaded images are served statically, e.g. `GET /uploads/users/<file>.jpg`.
 
 ### Message
 | Method | Endpoint | Auth | Description |
