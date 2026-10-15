@@ -177,11 +177,14 @@ Authorization: Bearer <your_jwt_token>
 
 ## 📮 Postman
 
-A ready-to-use collection is included: [`Whisperly.postman_collection.json`](./Whisperly.postman_collection.json).
+**📖 Published API documentation:** https://documenter.getpostman.com/view/49920929/2sBYB2s8QY
 
-Import it into Postman. It uses two variables:
+A ready-to-use collection is also included in the repo: [`Whisperly.postman_collection.json`](./Whisperly.postman_collection.json).
+
+Import it into Postman. It uses these variables:
 - `baseUrl` (default `http://localhost:3000`)
 - `token` (auto-filled after a successful login)
+- `receiverId` / `messageId` (auto-filled by test scripts)
 
 ---
 
