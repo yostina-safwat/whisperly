@@ -5,6 +5,7 @@ import authRouter from "./modules/auth/auth.controller.js";
 import userRouter from "./modules/user/user.controller.js";
 import messageRouter from "./modules/message/message.controller.js";
 import { globalErrorHandler, notFoundHandler } from "./utils/error/errorHandler.js";
+import { globalLimiter, authLimiter } from "./middleware/rateLimiter.middleware.js";
 import logger from "./utils/logger/logger.js";
 
 /**
@@ -18,6 +19,7 @@ const bootstrap = (app, express) => {
 
   // Global middleware
   app.use(cors());
+  app.use(globalLimiter);
   app.use(express.json());
 
   // Serve uploaded files statically, e.g. GET /uploads/users/ab12.jpg
@@ -38,7 +40,7 @@ const bootstrap = (app, express) => {
   });
 
   // Feature routes
-  app.use("/auth", authRouter);
+  app.use("/auth", authLimiter, authRouter);
   app.use("/user", userRouter);
   app.use("/message", messageRouter);
 
