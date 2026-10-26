@@ -52,7 +52,11 @@ export const getPublicProfile = asyncHandler(async (req, res) => {
 
 // GET /user/messages  (protected) — whispers I have received
 export const getMyMessages = asyncHandler(async (req, res) => {
-  const messages = await Message.find({ receiver: req.user._id }).sort({
+  // Only anonymous whispers — chat messages are read from /conversation.
+  const messages = await Message.find({
+    receiver: req.user._id,
+    conversation: null,
+  }).sort({
     createdAt: -1,
   });
 

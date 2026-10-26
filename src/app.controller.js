@@ -4,6 +4,8 @@ import { initCache } from "./utils/cache/cache.js";
 import authRouter from "./modules/auth/auth.controller.js";
 import userRouter from "./modules/user/user.controller.js";
 import messageRouter from "./modules/message/message.controller.js";
+import requestRouter from "./modules/request/request.controller.js";
+import conversationRouter from "./modules/conversation/conversation.controller.js";
 import { globalErrorHandler, notFoundHandler } from "./utils/error/errorHandler.js";
 import { globalLimiter, authLimiter } from "./middleware/rateLimiter.middleware.js";
 import logger from "./utils/logger/logger.js";
@@ -43,6 +45,8 @@ const bootstrap = (app, express) => {
   app.use("/auth", authLimiter, authRouter);
   app.use("/user", userRouter);
   app.use("/message", messageRouter);
+  app.use("/request", requestRouter);
+  app.use("/conversation", conversationRouter);
 
   // 404 + global error handler (must be last)
   app.use(notFoundHandler);

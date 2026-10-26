@@ -21,6 +21,12 @@ const messageSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    // null = anonymous whisper. Set = a normal message inside a conversation.
+    conversation: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Conversation",
+      default: null,
+    },
     isRead: {
       type: Boolean,
       default: false,
