@@ -3,6 +3,8 @@ import crypto from "crypto";
 export const OtpTypes = {
   CONFIRM_EMAIL: "confirmEmail",
   FORGOT_PASSWORD: "forgotPassword",
+  ENABLE_TWO_STEP: "enableTwoStep",
+  TWO_STEP_LOGIN: "twoStepLogin",
 };
 
 const OTP_EXPIRES_IN_MINUTES = Number(process.env.OTP_EXPIRES_IN_MINUTES) || 10;
