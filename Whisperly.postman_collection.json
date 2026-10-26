@@ -9,7 +9,9 @@
     { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
     { "key": "token", "value": "", "type": "string" },
     { "key": "receiverId", "value": "", "type": "string" },
-    { "key": "messageId", "value": "", "type": "string" }
+    { "key": "messageId", "value": "", "type": "string" },
+    { "key": "requestId", "value": "", "type": "string" },
+    { "key": "conversationId", "value": "", "type": "string" }
   ],
   "item": [
     {
@@ -66,6 +68,65 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"secret123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Verify Login (two-step)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res && res.data && res.data.token) {",
+                  "  pm.collectionVariables.set('token', res.data.token);",
+                  "  pm.test('Token saved', () => pm.expect(res.data.token).to.be.a('string'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login/verify", "host": ["{{baseUrl}}"], "path": ["auth", "login", "verify"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\",\n  \"otp\": \"123456\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Enable Two-Step",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/two-step/enable", "host": ["{{baseUrl}}"], "path": ["auth", "two-step", "enable"] }
+          }
+        },
+        {
+          "name": "Confirm Two-Step",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/two-step/confirm", "host": ["{{baseUrl}}"], "path": ["auth", "two-step", "confirm"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otp\": \"123456\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Disable Two-Step",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/two-step/disable", "host": ["{{baseUrl}}"], "path": ["auth", "two-step", "disable"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"secret123\"\n}"
             }
           }
         },
@@ -186,6 +247,112 @@
             "method": "DELETE",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
             "url": { "raw": "{{baseUrl}}/message/{{messageId}}", "host": ["{{baseUrl}}"], "path": ["message", "{{messageId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Request",
+      "item": [
+        {
+          "name": "Send Chat Request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res && res.data && res.data._id) pm.collectionVariables.set('requestId', res.data._id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/request/{{receiverId}}", "host": ["{{baseUrl}}"], "path": ["request", "{{receiverId}}"] }
+          }
+        },
+        {
+          "name": "Received Requests",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/request", "host": ["{{baseUrl}}"], "path": ["request"] }
+          }
+        },
+        {
+          "name": "Sent Requests",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/request/sent", "host": ["{{baseUrl}}"], "path": ["request", "sent"] }
+          }
+        },
+        {
+          "name": "Accept / Reject Request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res && res.data && res.data.conversation && res.data.conversation._id) pm.collectionVariables.set('conversationId', res.data.conversation && res.data.conversation._id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/request/{{requestId}}", "host": ["{{baseUrl}}"], "path": ["request", "{{requestId}}"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"accepted\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Cancel Request",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/request/{{requestId}}", "host": ["{{baseUrl}}"], "path": ["request", "{{requestId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Conversation",
+      "item": [
+        {
+          "name": "My Conversations",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/conversation", "host": ["{{baseUrl}}"], "path": ["conversation"] }
+          }
+        },
+        {
+          "name": "Conversation Messages",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/conversation/{{conversationId}}/messages", "host": ["{{baseUrl}}"], "path": ["conversation", "{{conversationId}}", "messages"] }
+          }
+        },
+        {
+          "name": "Send Message in Conversation",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/conversation/{{conversationId}}/messages", "host": ["{{baseUrl}}"], "path": ["conversation", "{{conversationId}}", "messages"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Hey 👋\"\n}"
+            }
           }
         }
       ]
