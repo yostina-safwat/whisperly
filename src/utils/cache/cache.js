@@ -1,5 +1,6 @@
 import Redis from "ioredis";
 import logger from "../logger/logger.js";
+import AppError from "../error/appError.js";
 
 /**
  * Cache — a thin wrapper around a Redis client.
@@ -40,6 +41,19 @@ export const initCache = () => {
 };
 
 export const isCacheReady = () => ready;
+
+/**
+ * Return the live Redis client for callers that can't degrade gracefully —
+ * notably the OTP store, where silently dropping a code would break signup
+ * and password reset. If Redis isn't connected we fail loudly with a 503 so
+ * the user gets a clear "try again" instead of a broken flow.
+ */
+export const getRedisClient = () => {
+  if (!client || !ready) {
+    throw new AppError("Verification service is temporarily unavailable, please try again shortly", 503);
+  }
+  return client;
+};
 
 export const cacheGet = async (key) => {
   if (!ready) return null;

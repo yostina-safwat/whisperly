@@ -13,6 +13,7 @@ Anyone can send an anonymous "whisper" to a registered user. Users sign up, conf
 - 🔐 **Full authentication**
   - Register with email + password (hashed with bcrypt)
   - Email confirmation via a 6-digit **OTP** (Nodemailer)
+  - OTP codes stored in **Redis** with an automatic **TTL** (self-expiring)
   - Login with **JWT** access tokens
   - Resend OTP
   - Forgot password / reset password (OTP based)
@@ -68,8 +69,7 @@ Whisperly/
 │   │   ├── connection.js
 │   │   └── models/
 │   │       ├── user.model.js
-│   │       ├── message.model.js
-│   │       └── otp.model.js
+│   │       └── message.model.js
 │   ├── middleware/
 │   │   ├── authentication.middleware.js
 │   │   └── validation.middleware.js
@@ -85,7 +85,7 @@ Whisperly/
 │       ├── error/               # AppError (OOP) + error handler
 │       ├── logger/              # custom Logger class
 │       ├── email/               # EmailProvider (abstraction) + Nodemailer + service
-│       ├── otp/                 # OTP generation
+│       ├── otp/                 # OTP generation + Redis store (with TTL)
 │       ├── upload/              # Multer config + magic numbers + saveFile
 │       ├── cache/              # Redis client wrapper
 │       └── security/            # hashing + JWT
@@ -99,7 +99,7 @@ Whisperly/
 ### 1. Prerequisites
 - Node.js 18+
 - MongoDB running locally, or a MongoDB Atlas connection string
-- Redis (optional — only needed if you want caching enabled)
+- Redis — stores OTP codes (with TTL) and backs response caching
 
 ### 2. Install
 ```bash
@@ -122,7 +122,7 @@ cp .env.example .env
 | `OTP_EXPIRES_IN_MINUTES` | OTP validity window |
 | `EMAIL_USER` / `EMAIL_PASSWORD` | Gmail + App Password for Nodemailer |
 | `EMAIL_FROM` | The "from" address shown in emails |
-| `REDIS_URL` | Redis connection string (optional; caching off if omitted) |
+| `REDIS_URL` | Redis connection string (OTP storage + caching) |
 | `CACHE_TTL_SECONDS` | Default cache lifetime in seconds |
 
 > **Gmail tip:** use a [Google App Password](https://myaccount.google.com/apppasswords), not your normal password.

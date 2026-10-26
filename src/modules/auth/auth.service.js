@@ -1,25 +1,21 @@
 import User from "../../DB/models/user.model.js";
-import Otp, { OtpTypes } from "../../DB/models/otp.model.js";
 import AppError from "../../utils/error/appError.js";
 import { asyncHandler } from "../../utils/error/errorHandler.js";
 import { hashValue, compareValue } from "../../utils/security/hash.js";
 import { generateToken } from "../../utils/security/token.js";
-import { generateOtpCode, getOtpExpiry } from "../../utils/otp/otp.js";
+import { generateOtpCode, OtpTypes } from "../../utils/otp/otp.js";
+import { saveOtp, consumeOtp } from "../../utils/otp/otpStore.js";
 import emailService from "../../utils/email/emailService.js";
 import logger from "../../utils/logger/logger.js";
 
-/** Create + store a hashed OTP and email it to the user. */
+/** Generate a code, stash it in Redis (with TTL) and email it to the user. */
 const issueOtp = async ({ email, name, type }) => {
-  // Remove any previous OTPs of the same type for this email.
-  await Otp.deleteMany({ email, type });
-
   const code = generateOtpCode();
-  await Otp.create({
-    email,
-    otp: await hashValue(code),
-    type,
-    expiresAt: getOtpExpiry(),
-  });
+
+  // Store first: if Redis is down this throws before we send a code the
+  // user could never verify. Writing also overwrites any previous code of
+  // the same type, so only the newest one stays valid.
+  await saveOtp({ email, type, code });
 
   await emailService.sendOtpEmail({
     to: email,
@@ -29,21 +25,9 @@ const issueOtp = async ({ email, name, type }) => {
   });
 };
 
-/** Verify a submitted OTP against the stored hash and consume it. */
+/** Verify a submitted OTP against the one stored in Redis and consume it. */
 const verifyOtp = async ({ email, otp, type }) => {
-  const record = await Otp.findOne({ email, type }).sort({ createdAt: -1 });
-  if (!record) {
-    throw AppError.badRequest("No valid code found, please request a new one");
-  }
-  if (record.expiresAt < new Date()) {
-    await Otp.deleteOne({ _id: record._id });
-    throw AppError.badRequest("Code expired, please request a new one");
-  }
-  const match = await compareValue(otp, record.otp);
-  if (!match) {
-    throw AppError.badRequest("Invalid verification code");
-  }
-  await Otp.deleteOne({ _id: record._id }); // one-time use
+  await consumeOtp({ email, type, code: otp });
 };
 
 // POST /auth/register
