@@ -5,6 +5,11 @@ import { hashValue, compareValue } from "../../utils/security/hash.js";
 import { generateToken } from "../../utils/security/token.js";
 import { generateOtpCode, OtpTypes } from "../../utils/otp/otp.js";
 import { saveOtp, consumeOtp } from "../../utils/otp/otpStore.js";
+import {
+  ensureNotBlocked,
+  registerFailedAttempt,
+  resetAttempts,
+} from "../../utils/security/loginAttempts.js";
 import emailService from "../../utils/email/emailService.js";
 import logger from "../../utils/logger/logger.js";
 
@@ -77,11 +82,18 @@ export const confirmEmail = asyncHandler(async (req, res) => {
 export const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  const user = await User.findOne({ email });
-  if (!user) throw AppError.unauthorized("Invalid email or password");
+  await ensureNotBlocked(email);
 
-  const match = await compareValue(password, user.password);
-  if (!match) throw AppError.unauthorized("Invalid email or password");
+  const user = await User.findOne({ email });
+  const match = user && (await compareValue(password, user.password));
+  if (!match) {
+    // Same handling for unknown email and wrong password, so we don't leak
+    // which emails are registered.
+    const triesLeft = await registerFailedAttempt(email);
+    const hint = triesLeft ? ` (${triesLeft} tries left)` : "";
+    throw AppError.unauthorized(`Invalid email or password${hint}`);
+  }
+  await resetAttempts(email);
 
   if (!user.isConfirmed) {
     throw AppError.forbidden("Please confirm your account before logging in");
