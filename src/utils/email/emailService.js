@@ -1,4 +1,4 @@
-import NodemailerProvider from "./nodemailerProvider.js";
+import { createEmailProvider } from "./emailProviderFactory.js";
 import { otpEmailTemplate } from "./emailTemplate.js";
 import logger from "../logger/logger.js";
 
@@ -15,10 +15,13 @@ class EmailService {
   }
 
   async sendOtpEmail({ to, name, otp, purpose }) {
-    const subject =
-      purpose === "forgotPassword"
-        ? "Whisperly - Password reset code"
-        : "Whisperly - Account confirmation code";
+    const subjects = {
+      confirmEmail: "Whisperly - Account confirmation code",
+      forgotPassword: "Whisperly - Password reset code",
+      enableTwoStep: "Whisperly - Enable two-step verification",
+      twoStepLogin: "Whisperly - Your login code",
+    };
+    const subject = subjects[purpose] || subjects.confirmEmail;
 
     try {
       await this.provider.send({
@@ -34,7 +37,7 @@ class EmailService {
   }
 }
 
-// Compose the default instance with the concrete Nodemailer provider.
-const emailService = new EmailService(new NodemailerProvider());
+// The factory picks the concrete provider (gmail by default, see .env).
+const emailService = new EmailService(createEmailProvider());
 export default emailService;
 export { EmailService };
