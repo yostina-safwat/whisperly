@@ -1,9 +1,12 @@
 /** Simple, branded HTML template for OTP emails. */
 export const otpEmailTemplate = ({ name, otp, purpose }) => {
-  const title =
-    purpose === "forgotPassword"
-      ? "Reset your Whisperly password"
-      : "Confirm your Whisperly account";
+  const titles = {
+    confirmEmail: "Confirm your Whisperly account",
+    forgotPassword: "Reset your Whisperly password",
+    enableTwoStep: "Turn on two-step verification",
+    twoStepLogin: "Finish logging in to Whisperly",
+  };
+  const title = titles[purpose] || titles.confirmEmail;
 
   return `
   <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto; padding: 24px; border:1px solid #eee; border-radius:12px;">

@@ -13,13 +13,21 @@ Anyone can send an anonymous "whisper" to a registered user. Users sign up, conf
 - 🔐 **Full authentication**
   - Register with email + password (hashed with bcrypt)
   - Email confirmation via a 6-digit **OTP** (Nodemailer)
+  - OTP codes stored in **Redis** with an automatic **TTL** (self-expiring)
   - Login with **JWT** access tokens
+  - **Two-step verification** (optional): login sends a code to your email first
+  - Account locked for 15 min after **5 wrong passwords** (counter kept in Redis)
   - Resend OTP
   - Forgot password / reset password (OTP based)
 - 💬 **Anonymous messaging (Saraha core)**
   - Send an anonymous whisper to any confirmed user
   - Read the whispers you received (protected)
   - Delete your own whispers
+- 🤝 **Chat requests & conversations**
+  - Send a chat request to a user, they accept or reject it
+  - Accepting opens a private conversation between the two of you
+- 🚦 **Rate limiting** (`express-rate-limit`)
+  - Global limit, a stricter one on `/auth`, and 5 whispers / minute
 - 🖼️ **File uploads (Multer)**
   - Upload / replace a profile picture
   - Two-layer validation: file filter (mime type) **and magic-number** check (real file content)
@@ -36,6 +44,7 @@ Anyone can send an anonymous "whisper" to a registered user. Users sign up, conf
   - Central async error handler (`asyncHandler` + global handler)
   - Custom **`Logger`** class
   - **Dependency Inversion** for the email layer (`EmailService` depends on an `EmailProvider` abstraction, not on Nodemailer directly)
+  - **Factory pattern** to create the email provider (`EMAIL_PROVIDER=gmail|console`)
   - Joi request validation middleware
   - JWT authentication + role authorization middleware
 
@@ -53,6 +62,7 @@ Anyone can send an anonymous "whisper" to a registered user. Users sign up, conf
 | Email       | Nodemailer (Gmail)           |
 | Uploads     | Multer (+ magic-number check)|
 | Cache       | Redis (ioredis)              |
+| Rate limit  | express-rate-limit           |
 
 ---
 
@@ -69,26 +79,30 @@ Whisperly/
 │   │   └── models/
 │   │       ├── user.model.js
 │   │       ├── message.model.js
-│   │       └── otp.model.js
+│   │       ├── request.model.js
+│   │       └── conversation.model.js
 │   ├── middleware/
 │   │   ├── authentication.middleware.js
 │   │   └── validation.middleware.js
 │   ├── modules/
 │   │   ├── auth/                 # register / confirm / login / otp / reset
 │   │   ├── user/                 # profile / public profile / my messages
-│   │   └── message/             # send / delete anonymous whispers
+│   │   ├── message/             # send / delete anonymous whispers
+│   │   ├── request/             # send / accept / reject chat requests
+│   │   └── conversation/        # chats opened from accepted requests
 │   ├── middleware/
 │   │   ├── authentication.middleware.js
 │   │   ├── validation.middleware.js
-│   │   └── withCache.middleware.js   # Redis response cache
+│   │   ├── withCache.middleware.js   # Redis response cache
+│   │   └── rateLimiter.middleware.js # express-rate-limit limiters
 │   └── utils/
 │       ├── error/               # AppError (OOP) + error handler
 │       ├── logger/              # custom Logger class
-│       ├── email/               # EmailProvider (abstraction) + Nodemailer + service
-│       ├── otp/                 # OTP generation
+│       ├── email/               # EmailProvider + factory + Nodemailer/console + service
+│       ├── otp/                 # OTP generation + Redis store (with TTL)
 │       ├── upload/              # Multer config + magic numbers + saveFile
 │       ├── cache/              # Redis client wrapper
-│       └── security/            # hashing + JWT
+│       └── security/            # hashing + JWT + login attempts lockout
 ├── uploads/                     # Uploaded files (served statically)
 ```
 
@@ -99,7 +113,7 @@ Whisperly/
 ### 1. Prerequisites
 - Node.js 18+
 - MongoDB running locally, or a MongoDB Atlas connection string
-- Redis (optional — only needed if you want caching enabled)
+- Redis — stores OTP codes (with TTL) and backs response caching
 
 ### 2. Install
 ```bash
@@ -120,9 +134,11 @@ cp .env.example .env
 | `JWT_ACCESS_EXPIRES_IN` | Token lifetime (e.g. `1d`) |
 | `SALT_ROUNDS` | bcrypt salt rounds |
 | `OTP_EXPIRES_IN_MINUTES` | OTP validity window |
+| `LOGIN_MAX_ATTEMPTS` / `LOGIN_BLOCK_MINUTES` | Wrong passwords before lockout / lock duration (default 5 / 15) |
+| `EMAIL_PROVIDER` | `gmail` to send real emails, `console` to just log them |
 | `EMAIL_USER` / `EMAIL_PASSWORD` | Gmail + App Password for Nodemailer |
 | `EMAIL_FROM` | The "from" address shown in emails |
-| `REDIS_URL` | Redis connection string (optional; caching off if omitted) |
+| `REDIS_URL` | Redis connection string (OTP storage + caching) |
 | `CACHE_TTL_SECONDS` | Default cache lifetime in seconds |
 
 > **Gmail tip:** use a [Google App Password](https://myaccount.google.com/apppasswords), not your normal password.
@@ -147,7 +163,11 @@ Base URL: `http://localhost:3000`
 | --- | --- | --- | --- |
 | POST | `/auth/register` | ❌ | Register a new user + send OTP |
 | POST | `/auth/confirm-email` | ❌ | Confirm account with OTP |
-| POST | `/auth/login` | ❌ | Login, returns JWT |
+| POST | `/auth/login` | ❌ | Login, returns JWT (or emails a code if two-step is on) |
+| POST | `/auth/login/verify` | ❌ | Second step of login: email + code → JWT |
+| PATCH | `/auth/two-step/enable` | ✅ | Send a code to turn on two-step |
+| POST | `/auth/two-step/confirm` | ✅ | Confirm the code, two-step is on |
+| PATCH | `/auth/two-step/disable` | ✅ | Turn two-step off (needs password) |
 | POST | `/auth/resend-otp` | ❌ | Resend an OTP code |
 | POST | `/auth/forgot-password` | ❌ | Send password reset OTP |
 | POST | `/auth/reset-password` | ❌ | Reset password with OTP |
@@ -168,6 +188,22 @@ Base URL: `http://localhost:3000`
 | POST | `/message/:receiverId` | ❌ | Send an anonymous whisper |
 | DELETE | `/message/:id` | ✅ | Delete one of my whispers |
 
+### Request
+| Method | Endpoint | Auth | Description |
+| --- | --- | --- | --- |
+| POST | `/request/:receiverId` | ✅ | Send a chat request |
+| GET | `/request` | ✅ | Requests waiting for my answer |
+| GET | `/request/sent` | ✅ | Requests I sent |
+| PATCH | `/request/:id` | ✅ | Accept / reject (`{ "status": "accepted" \| "rejected" }`) |
+| DELETE | `/request/:id` | ✅ | Cancel my pending request |
+
+### Conversation
+| Method | Endpoint | Auth | Description |
+| --- | --- | --- | --- |
+| GET | `/conversation` | ✅ | My conversations (latest first) |
+| GET | `/conversation/:id/messages` | ✅ | Messages of a conversation |
+| POST | `/conversation/:id/messages` | ✅ | Send a message in a conversation |
+
 **Auth header for protected routes:**
 ```
 Authorization: Bearer <your_jwt_token>
@@ -184,7 +220,7 @@ A ready-to-use collection is also included in the repo: [`Whisperly.postman_coll
 Import it into Postman. It uses these variables:
 - `baseUrl` (default `http://localhost:3000`)
 - `token` (auto-filled after a successful login)
-- `receiverId` / `messageId` (auto-filled by test scripts)
+- `receiverId` / `messageId` / `requestId` / `conversationId` (auto-filled by test scripts)
 
 ---
 

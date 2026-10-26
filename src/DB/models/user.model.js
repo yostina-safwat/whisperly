@@ -48,6 +48,11 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // When true, login needs an extra code sent to the user's email.
+    twoStepEnabled: {
+      type: Boolean,
+      default: false,
+    },
     // Relative path to the uploaded profile image, e.g. "uploads/users/ab12.jpg".
     profileImage: {
       type: String,

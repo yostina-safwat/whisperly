@@ -1,25 +1,26 @@
 import User from "../../DB/models/user.model.js";
-import Otp, { OtpTypes } from "../../DB/models/otp.model.js";
 import AppError from "../../utils/error/appError.js";
 import { asyncHandler } from "../../utils/error/errorHandler.js";
 import { hashValue, compareValue } from "../../utils/security/hash.js";
 import { generateToken } from "../../utils/security/token.js";
-import { generateOtpCode, getOtpExpiry } from "../../utils/otp/otp.js";
+import { generateOtpCode, OtpTypes } from "../../utils/otp/otp.js";
+import { saveOtp, consumeOtp } from "../../utils/otp/otpStore.js";
+import {
+  ensureNotBlocked,
+  registerFailedAttempt,
+  resetAttempts,
+} from "../../utils/security/loginAttempts.js";
 import emailService from "../../utils/email/emailService.js";
 import logger from "../../utils/logger/logger.js";
 
-/** Create + store a hashed OTP and email it to the user. */
+/** Generate a code, stash it in Redis (with TTL) and email it to the user. */
 const issueOtp = async ({ email, name, type }) => {
-  // Remove any previous OTPs of the same type for this email.
-  await Otp.deleteMany({ email, type });
-
   const code = generateOtpCode();
-  await Otp.create({
-    email,
-    otp: await hashValue(code),
-    type,
-    expiresAt: getOtpExpiry(),
-  });
+
+  // Store first: if Redis is down this throws before we send a code the
+  // user could never verify. Writing also overwrites any previous code of
+  // the same type, so only the newest one stays valid.
+  await saveOtp({ email, type, code });
 
   await emailService.sendOtpEmail({
     to: email,
@@ -29,21 +30,9 @@ const issueOtp = async ({ email, name, type }) => {
   });
 };
 
-/** Verify a submitted OTP against the stored hash and consume it. */
+/** Verify a submitted OTP against the one stored in Redis and consume it. */
 const verifyOtp = async ({ email, otp, type }) => {
-  const record = await Otp.findOne({ email, type }).sort({ createdAt: -1 });
-  if (!record) {
-    throw AppError.badRequest("No valid code found, please request a new one");
-  }
-  if (record.expiresAt < new Date()) {
-    await Otp.deleteOne({ _id: record._id });
-    throw AppError.badRequest("Code expired, please request a new one");
-  }
-  const match = await compareValue(otp, record.otp);
-  if (!match) {
-    throw AppError.badRequest("Invalid verification code");
-  }
-  await Otp.deleteOne({ _id: record._id }); // one-time use
+  await consumeOtp({ email, type, code: otp });
 };
 
 // POST /auth/register
@@ -93,14 +82,32 @@ export const confirmEmail = asyncHandler(async (req, res) => {
 export const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  const user = await User.findOne({ email });
-  if (!user) throw AppError.unauthorized("Invalid email or password");
+  await ensureNotBlocked(email);
 
-  const match = await compareValue(password, user.password);
-  if (!match) throw AppError.unauthorized("Invalid email or password");
+  const user = await User.findOne({ email });
+  const match = user && (await compareValue(password, user.password));
+  if (!match) {
+    // Same handling for unknown email and wrong password, so we don't leak
+    // which emails are registered.
+    const triesLeft = await registerFailedAttempt(email);
+    const hint = triesLeft ? ` (${triesLeft} tries left)` : "";
+    throw AppError.unauthorized(`Invalid email or password${hint}`);
+  }
+  await resetAttempts(email);
 
   if (!user.isConfirmed) {
     throw AppError.forbidden("Please confirm your account before logging in");
+  }
+
+  // Two-step on: the password alone isn't enough, email a code first and
+  // only hand out the token from /auth/login/verify.
+  if (user.twoStepEnabled) {
+    await issueOtp({ email: user.email, name: user.name, type: OtpTypes.TWO_STEP_LOGIN });
+    return res.status(200).json({
+      success: true,
+      message: "We sent a login code to your email, verify it to finish logging in.",
+      data: { twoStepRequired: true },
+    });
   }
 
   const token = generateToken({ id: user._id, role: user.role });
@@ -109,6 +116,75 @@ export const login = asyncHandler(async (req, res) => {
     success: true,
     message: "Logged in successfully",
     data: { token, user },
+  });
+});
+
+// POST /auth/login/verify  — second step of the login when two-step is on
+export const verifyLogin = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+
+  const user = await User.findOne({ email });
+  if (!user || !user.twoStepEnabled) {
+    throw AppError.badRequest("Two-step verification is not enabled for this account");
+  }
+
+  await verifyOtp({ email, otp, type: OtpTypes.TWO_STEP_LOGIN });
+
+  const token = generateToken({ id: user._id, role: user.role });
+
+  res.status(200).json({
+    success: true,
+    message: "Logged in successfully",
+    data: { token, user },
+  });
+});
+
+// PATCH /auth/two-step/enable  (protected) — send a code to turn it on
+export const enableTwoStep = asyncHandler(async (req, res) => {
+  if (req.user.twoStepEnabled) {
+    throw AppError.badRequest("Two-step verification is already enabled");
+  }
+
+  await issueOtp({
+    email: req.user.email,
+    name: req.user.name,
+    type: OtpTypes.ENABLE_TWO_STEP,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Check your email for the code to enable two-step verification.",
+  });
+});
+
+// POST /auth/two-step/confirm  (protected) — confirm the code, turn it on
+export const confirmTwoStep = asyncHandler(async (req, res) => {
+  await verifyOtp({
+    email: req.user.email,
+    otp: req.body.otp,
+    type: OtpTypes.ENABLE_TWO_STEP,
+  });
+
+  req.user.twoStepEnabled = true;
+  await req.user.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Two-step verification is now enabled 🔐",
+  });
+});
+
+// PATCH /auth/two-step/disable  (protected) — needs the password again
+export const disableTwoStep = asyncHandler(async (req, res) => {
+  const match = await compareValue(req.body.password, req.user.password);
+  if (!match) throw AppError.unauthorized("Wrong password");
+
+  req.user.twoStepEnabled = false;
+  await req.user.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Two-step verification disabled",
   });
 });
 
